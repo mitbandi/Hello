@@ -185,38 +185,51 @@ def g_cnc(d, im, t):
     p, dy = rise(t, 29.6)
     text(d, (W / 2, 870 + dy), 'Innovating from day one', 34, '600', C5, p)
 
+ENG = Image.open('engine.jpg').convert('RGB')
+ENG_PAD = Image.new('RGB', (2000, 1148), (34, 34, 34)); ENG_PAD.paste(ENG, (0, 167))
+VP = (0, 150, 1080, 770)  # viewport in panel
 def g_engine(d, im, t):
-    header(d, t, 38.7, '3D ROTATING AIRFOILS', 80)
-    a = eo(prog(t, 38.7, 0.6))
-    cx, cy, R = W / 2, 400, 260 * (0.7 + 0.3 * eback(prog(t, 38.7, 0.7)))
-    spin = (t - 38.7) * 2.2
-    d.ellipse((cx - R - 14, cy - R - 14, cx + R + 14, cy + R + 14), outline=rgba(C4, a * 0.8), width=5)
-    n = 30
-    for i in range(n):
-        th = spin + i * 2 * math.pi / n; w = 2 * math.pi / n * 0.55; tw = 0.38
-        r0, r1 = R * 0.34, R
-        pts = [(cx + r0 * math.cos(th), cy + r0 * math.sin(th)),
-               (cx + r1 * math.cos(th + tw), cy + r1 * math.sin(th + tw)),
-               (cx + r1 * math.cos(th + tw + w), cy + r1 * math.sin(th + tw + w)),
-               (cx + r0 * math.cos(th + w * 0.9), cy + r0 * math.sin(th + w * 0.9))]
-        col = C4 if i % 2 else C5
-        d.polygon(pts, fill=rgba(col, a), outline=rgba(C1, a))
-    d.ellipse((cx - R * 0.36, cy - R * 0.36, cx + R * 0.36, cy + R * 0.36), fill=rgba(C1, a), outline=rgba(C2, a), width=6)
-    d.ellipse((cx - R * 0.12, cy - R * 0.12, cx + R * 0.12, cy + R * 0.12), fill=rgba(C3, a))
-    # cold / hot section bar
+    header(d, t, 38.7, '3D ROTATING AIRFOILS' if t < 41.7 else 'INSIDE AN ENGINE', 80)
+    vw, vh = VP[2] - VP[0], VP[3] - VP[1]
+    # camera: start tight on turbine rotor, pull back to full engine
+    z0 = (1355, 410 + 167, 620); z1 = (1000, 574, 2000)
+    k = eio(prog(t, 41.8, 1.3))
+    drift = 1 - 0.06 * clamp((t - 38.6) / 3.2)  # slow push-in while tight
+    cx = z0[0] + (z1[0] - z0[0]) * k; cy = z0[1] + (z1[1] - z0[1]) * k
+    bw = (z0[2] * drift) + (z1[2] - z0[2] * drift) * k; bh = bw * vh / vw
+    cx = clamp(cx, bw / 2, 2000 - bw / 2); cy = clamp(cy, bh / 2, 1148 - bh / 2)
+    box = (max(0.0, cx - bw / 2), max(0.0, cy - bh / 2), min(2000.0, cx + bw / 2), min(1148.0, cy + bh / 2))
+    view = ENG_PAD.resize((vw, vh), Image.BILINEAR, box=box)
+    a = eo(prog(t, 38.6, 0.5))
+    if a < 1: view = Image.blend(Image.new('RGB', (vw, vh), (34, 34, 34)), view, a)
+    vd = ImageDraw.Draw(view, 'RGBA')
+    sx = vw / bw
+    def vx(x): return (x - box[0]) * sx
+    # section highlights (image coords: cold 40-930, hot 1000-1960)
+    pc = prog(t, 44.5, 0.4); ph = prog(t, 45.4, 0.4); pend = prog(t, 46.6, 0.5)
+    if pc > 0:
+        dim_hot = eo(pc) * (1 - eo(ph)); dim_cold = eo(ph) * (1 - eo(pend))
+        if dim_hot > 0: vd.rectangle((vx(965), 0, vw, vh), fill=(0, 0, 0, int(150 * dim_hot)))
+        if dim_cold > 0: vd.rectangle((0, 0, vx(965), vh), fill=(0, 0, 0, int(150 * dim_cold)))
+    # airfoil callout while tight
+    pa = prog(t, 39.6, 0.4) * (1 - prog(t, 41.6, 0.3))
+    if pa > 0:
+        fx, fy = vx(1355), (410 + 167 - box[1]) * sx
+        r = 230 * (0.8 + 0.2 * eback(prog(t, 39.6, 0.5)))
+        vd.ellipse((fx - r, fy - r, fx + r, fy + r), outline=rgba(C4, pa), width=6)
+    im.paste(view, (VP[0], VP[1]))
+    d.rectangle((0, VP[1] - 3, W, VP[1]), fill=rgba(C4, 0.8)); d.rectangle((0, VP[3], W, VP[3] + 3), fill=rgba(C4, 0.8))
+    if pa > 0: pill(d, W / 2, VP[3] - 60, 'TURBINE ROTOR · 3D AIRFOILS', 34, '800', C2, WHITE, pa)
     p = prog(t, 44.5, 0.5)
     if p > 0:
-        e = eo(p); y0, y1 = 730, 830
-        d.rounded_rectangle((90, y0, 90 + 440 * e, y1), 18, fill=rgba(C5, e))
-        text(d, (310, 780), 'COLD SECTION', 38, '900', C1, prog(t, 44.7, 0.3))
-    p = prog(t, 45.5, 0.5)
-    if p > 0:
-        e = eo(p); fl = 0.85 + 0.15 * math.sin(t * 12)
+        e = eo(p); hl = 1 - 0.45 * eo(ph) * (1 - eo(pend))
+        d.rounded_rectangle((60, 800, 60 + 465 * e, 880), 18, fill=rgba(C5, e * hl))
+        text(d, (292, 840), 'COLD SECTION', 36, '900', C1, prog(t, 44.7, 0.3))
+    if ph > 0:
+        e = eo(ph); fl = 0.85 + 0.15 * math.sin(t * 12)
         col = (int(230 * fl + 20), int(100 * fl), 30)
-        d.rounded_rectangle((550, 730, 550 + 440 * e, 830), 18, fill=rgba(col, e))
-        text(d, (770, 780), 'HOT SECTION', 38, '900', WHITE, prog(t, 45.7, 0.3))
-    p, dy = rise(t, 48.3)
-    text(d, (W / 2, 885 + dy), 'Azad makes multiple components in both', 30, '600', C5, p)
+        d.rounded_rectangle((555, 800, 555 + 465 * e, 880), 18, fill=rgba(col, e))
+        text(d, (787, 840), 'HOT SECTION', 36, '900', WHITE, prog(t, 45.6, 0.3))
 
 def g_heat(d, im, t):
     header(d, t, 57.0, 'EXTREME CONDITIONS')
